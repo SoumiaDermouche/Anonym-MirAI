@@ -1,0 +1,16 @@
+datasets
+fpdf2
+gliner
+openmed
+pandas
+pdfplumber
+presidio-analyzer[transformers]
+presidio-anonymizer
+python-dotenv
+PyYAML
+requests
+spacy
+streamlit
+tiktoken
+torch
+transformers

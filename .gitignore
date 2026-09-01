@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.pyc
+data/
+core
+models/
+results.csv
+promptfoo.yaml
+tests.yaml
+training/full_run.log
