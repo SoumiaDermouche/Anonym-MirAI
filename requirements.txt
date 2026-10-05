@@ -1,11 +1,15 @@
+audioop-lts; python_version >= "3.13"
 datasets
 fpdf2
 gliner
+gliner2
 openmed
 pandas
 pdfplumber
+peft
 presidio-analyzer[transformers]
 presidio-anonymizer
+pydub
 python-dotenv
 PyYAML
 requests
@@ -13,4 +17,4 @@ spacy
 streamlit
 tiktoken
 torch
-transformers
+transformers>=5.12,<5.17  # OpenMed/Privacy Filter exigent 5.x ; gliner exige <5.17

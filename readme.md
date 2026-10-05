@@ -34,6 +34,50 @@ streamlit run app.py
 
 L'utilisateur dépose un PDF → choisit le modèle dans la sidebar → télécharge le PDF anonymisé.
 
+## Anonymisation audio (PII vocale)
+
+Le package `anonym_audio/` masque les données sensibles **parlées** dans un fichier audio :
+Whisper transcrit l'audio avec timestamps mot-à-mot → un détecteur PII texte (les mêmes
+providers que ci-dessus) repère les entités → les passages correspondants sont remplacés
+par un bip ou un silence dans l'audio d'origine.
+
+### Prérequis
+
+```bash
+pip install -r requirements.txt        # inclut pydub + audioop-lts (Python ≥ 3.13)
+sudo apt-get install -y ffmpeg          # binaire système requis par pydub
+```
+
+La transcription passe par la gateway interne (pas l'API OpenAI publique). Les variables
+suivantes doivent être présentes dans `.env` (déjà configurées ici) :
+
+```
+WHISPER_ENDPOINT=https://gateway.api-hp.ai.numerique-interieur.com/v1
+WHISPER_API_KEY=...          # jeton Bearer OAuth de la gateway (expire — à renouveler)
+WHISPER_MODEL=whisper        # modèles dispo : whisper, whisper-diarization
+```
+
+### Interface Streamlit
+
+```bash
+cd /home/onyxia/work/Anonym-MirAI
+streamlit run audio_app.py
+```
+
+L'utilisateur dépose un audio (mp3, wav, m4a, ogg, flac, webm) → choisit le détecteur, le
+mode (bip / silence) et la marge de sécurité dans la sidebar → écoute et télécharge l'audio
+anonymisé, avec la liste des passages masqués et la transcription.
+
+### Ligne de commande
+
+```bash
+python -m anonym_audio entree.wav sortie.wav --provider presidio --mode beep
+```
+
+Options : `--provider {presidio,gliner,gliner_fr,gliner2,openmed,privacy_filter}`, `--mode {beep,silence}`,
+`--padding` (marge en secondes autour de chaque plage, défaut `0.15`),
+`--language` (défaut `fr`), `--entities` (filtre, ex. `PERSON,PHONE_NUMBER`).
+
 ## Évaluation
 
 ### 1. Charger le dataset français (à faire une seule fois)
@@ -93,7 +137,9 @@ Le score promptfoo = Recall par test (seuil passage : 0.70). Les assertions util
 
 ```
 Anonym-MirAI/
-├── app.py                        # Interface Streamlit
+├── app.py                        # Interface Streamlit (PDF)
+├── audio_app.py                  # Interface Streamlit (audio / PII vocale)
+├── anonym_audio/                 # Pipeline audio : transcription + détection + masquage
 ├── pdf_processor.py              # Extraction et reconstruction PDF
 ├── evaluate.py                   # Évaluation locale par provider et label
 ├── generate_report.py            # Rapport HTML avec entités colorées
@@ -109,6 +155,7 @@ Anonym-MirAI/
 │   ├── openmed_local_provider.py       # OpenMed (local)
 │   ├── gliner_local_provider.py        # GLiNER zero-shot (local)
 │   ├── gliner_fr_provider.py           # GLiNER fine-tuné FR (local)
+│   ├── gliner2_provider.py             # GLiNER2 PII multilingue (local, package gliner2)
 │   ├── privacy_filter_local_provider.py # Privacy Filter (local)
 │   └── presidio_wrapper.py             # Wrapper pour promptfoo
 └── data/
