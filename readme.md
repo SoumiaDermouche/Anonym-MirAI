@@ -13,6 +13,7 @@ pipeline de fine-tuning de GLiNER, qui n'utilise que le split `train`) :
 | **GLiNER (fine-tuné FR)** | Local (fine-tuné sur ai4privacy) | 0.975 | 0.983 | 0.977 | 1.7% | 0.047s |
 | **OpenMed** | Local | 0.957 | 0.860 | 0.894 | 14.0% | 0.917s |
 | **Privacy Filter** | Local | 0.938 | 0.840 | 0.870 | 16.0% | 0.338s |
+| **GLiNER2** | Local (`fastino/gliner2-privacy-filter-PII-multi`) | 0.907 | 0.792 | 0.832 | 20.8% | 0.05s |
 | **GLiNER** | Local (zero-shot) | 0.881 | 0.764 | 0.801 | 23.6% | 0.054s |
 | **Presidio** | Règles/NER local | 0.866 | 0.544 | 0.642 | 45.6% | 0.042s |
 
@@ -74,7 +75,7 @@ anonymisé, avec la liste des passages masqués et la transcription.
 python -m anonym_audio entree.wav sortie.wav --provider presidio --mode beep
 ```
 
-Options : `--provider {presidio,gliner,gliner_fr,gliner2,openmed,privacy_filter}`, `--mode {beep,silence}`,
+Options : `--provider {presidio,gliner,gliner_fr,gliner2,openmed,privacy_filter,ensemble}`, `--mode {beep,silence}`,
 `--padding` (marge en secondes autour de chaque plage, défaut `0.15`),
 `--language` (défaut `fr`), `--entities` (filtre, ex. `PERSON,PHONE_NUMBER`).
 
@@ -102,6 +103,42 @@ python evaluate.py
 
 Affiche dans le terminal : Precision, Recall, F1, Leakage Rate global et par type d'entité (PERSON, DATE, EMAIL, PHONE…).
 Sauvegarde les résultats dans `data/evaluation_results.csv`.
+
+Évalue aussi les **croisements** (cf. section dédiée) ; `--ensemble-members` choisit les détecteurs combinés :
+
+```bash
+python evaluate.py --ensemble-members gliner_fr,openmed,privacy_filter
+```
+
+## Croisement de détecteurs (ensemble)
+
+`providers/ensemble_provider.py` combine plusieurs détecteurs, d'après Kim, Heider & Meystre,
+*Ensemble-based Methods to Improve De-identification of Electronic Health Record Narratives*,
+AMIA Annu Symp Proc 2018:663-672 (PMID 30815108). Le vote se fait **au niveau caractère** (les
+détecteurs n'ont ni les mêmes labels ni les mêmes frontières d'entités) :
+
+- `union` : masqué si au moins un détecteur le trouve (recall maximal) ;
+- `vote` : masqué si au moins la moitié des détecteurs le trouvent ;
+- `pondere` : vote pondéré par le F1 de chaque détecteur (`WEIGHTS`).
+
+Disponible dans `app.py` et `audio_app.py` (« Croisement (ensemble) ») et en CLI :
+`python -m anonym_audio in.wav out.wav --provider ensemble --members gliner_fr,gliner2,privacy_filter --strategy vote`.
+
+Résultats (`evaluate.py`, 200 exemples `french_pii_test.csv`) — F1 :
+
+| Détecteurs combinés | union | vote | pondere |
+|---|---|---|---|
+| gliner_fr, gliner2, privacy_filter (défaut) | 0.939 | 0.951 | 0.951 |
+| gliner_fr, openmed, privacy_filter | 0.962 | 0.939 | 0.939 |
+| les 6 détecteurs | 0.905 | 0.952 | 0.950 |
+| *rappel : GLiNER (fine-tuné FR) seul* | | **0.977** | |
+
+**Sur ce jeu de test, aucun croisement ne dépasse GLiNER fine-tuné FR seul.** Un détecteur domine
+nettement les autres : l'union ajoute leurs faux positifs (precision ↓) sans gain de recall (0.983
+déjà atteint), le vote fait perdre des PII que seul GLiNER FR trouve (recall ↓). Ce jeu de test vient
+du même dataset (ai4privacy) que le fine-tuning, ce qui avantage GLiNER FR ; l'intérêt du croisement
+(meilleure généralisation entre corpus, cf. Kim et al. AMIA 2020, PMID 33936439) reste à mesurer sur
+des données d'une autre source (transcriptions audio réelles, documents internes).
 
 ### 3. Rapport HTML — visualisation des entités colorées
 
@@ -156,6 +193,7 @@ Anonym-MirAI/
 │   ├── gliner_local_provider.py        # GLiNER zero-shot (local)
 │   ├── gliner_fr_provider.py           # GLiNER fine-tuné FR (local)
 │   ├── gliner2_provider.py             # GLiNER2 PII multilingue (local, package gliner2)
+│   ├── ensemble_provider.py            # Croisement de détecteurs (union / vote / vote pondéré)
 │   ├── privacy_filter_local_provider.py # Privacy Filter (local)
 │   └── presidio_wrapper.py             # Wrapper pour promptfoo
 └── data/

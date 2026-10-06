@@ -143,6 +143,16 @@ MODELS = {
         "env_endpoint": None,
         "env_key": None,
     },
+    "GLiNER2": {
+        "provider": "gliner2_local",
+        "env_endpoint": None,
+        "env_key": None,
+    },
+    "Croisement (ensemble)": {
+        "provider": "ensemble",
+        "env_endpoint": None,
+        "env_key": None,
+    },
 }
 
 # --- Sidebar ---
@@ -155,7 +165,7 @@ with st.sidebar:
     )
 
     st.divider()
-    if selected_model_name in ("GLiNER", "GLiNER (fine-tuné FR)"):
+    if selected_model_name in ("GLiNER", "GLiNER (fine-tuné FR)", "GLiNER2"):
         st.subheader("Entités à détecter")
         default_help = (
             "GLiNER accepte n'importe quel label en français ou anglais.\n\n"
@@ -189,6 +199,21 @@ with st.sidebar:
                 "Vide = détecter toutes les entités."
             ),
         )
+    elif selected_model_name == "Croisement (ensemble)":
+        from providers.ensemble_provider import DEFAULT_MEMBERS, MEMBERS, STRATEGIES
+        st.subheader("Croisement")
+        ensemble_members = st.multiselect(
+            "Détecteurs combinés", options=list(MEMBERS), default=list(DEFAULT_MEMBERS),
+            help="Chaque détecteur tourne avec sa liste d'entités par défaut.",
+        )
+        ensemble_strategy = st.radio(
+            "Méthode de combinaison", options=list(STRATEGIES), index=1,
+            format_func={"union": "Union (recall max)", "vote": "Vote majoritaire",
+                         "pondere": "Vote pondéré (F1)"}.get,
+            help="Union : masqué si un détecteur le trouve. Vote : si au moins la moitié. "
+                 "Pondéré : vote pondéré par le F1 de chaque détecteur.",
+        )
+        custom_instruction = ""
     else:
         custom_instruction = ""
 
@@ -216,6 +241,12 @@ def run_anonymize(text: str, provider: str, endpoint: str, api_key: str, custom_
     elif provider == "privacy_filter_local":
         from providers.privacy_filter_local_provider import anonymize
         return anonymize(text, custom_instruction=custom_instruction)
+    elif provider == "gliner2_local":
+        from providers.gliner2_provider import anonymize
+        return anonymize(text, custom_instruction=custom_instruction)
+    elif provider == "ensemble":
+        from providers.ensemble_provider import make_anonymize
+        return make_anonymize(ensemble_members, ensemble_strategy)(text)
 
 
 # --- Initialisation session state ---

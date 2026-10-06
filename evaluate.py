@@ -11,6 +11,8 @@ from providers.privacy_filter_local_provider import anonymize as privacy_filter_
 from providers.openmed_local_provider import anonymize as openmed_local_anonymize
 from providers.gliner_local_provider import anonymize as gliner_local_anonymize
 from providers.gliner_fr_provider import anonymize as gliner_fr_anonymize
+from providers.gliner2_provider import anonymize as gliner2_anonymize
+from providers.ensemble_provider import DEFAULT_MEMBERS, STRATEGIES, anonymize_with
 
 DATA_FILE = "data/french_pii_test.csv"
 
@@ -25,6 +27,19 @@ def load_samples(sample_size: int | None) -> pd.DataFrame:
         df = df.head(sample_size)
     df["privacy_mask"] = df["privacy_mask"].apply(ast.literal_eval)
     return df
+
+
+def cached(fn):
+    """Mémorise les résultats par texte : les croisements réutilisent les sorties des
+    détecteurs déjà évalués au lieu de les recalculer."""
+    cache = {}
+
+    def wrapper(text: str, custom_instruction: str = "") -> dict:
+        if text not in cache:
+            cache[text] = fn(text)
+        return cache[text]
+
+    return wrapper
 
 
 def run_provider(name: str, fn, df: pd.DataFrame):
@@ -86,6 +101,11 @@ def parse_args():
         "--sample-size", "-n", type=int, default=None,
         help=f"Nombre d'exemples à évaluer depuis {DATA_FILE} (par défaut : tous, sans limite).",
     )
+    p.add_argument(
+        "--ensemble-members", default=",".join(DEFAULT_MEMBERS),
+        help="Détecteurs combinés dans les croisements, séparés par des virgules "
+             "(parmi gliner_fr, gliner2, privacy_filter, openmed, gliner, presidio).",
+    )
     return p.parse_args()
 
 
@@ -94,12 +114,26 @@ def main():
     df = load_samples(args.sample_size)
     print(f"Chargement de {len(df)} exemples depuis {DATA_FILE}...\n")
 
+    members = {
+        "privacy_filter": cached(privacy_filter_local_anonymize),
+        "openmed":        cached(openmed_local_anonymize),
+        "gliner":         cached(gliner_local_anonymize),
+        "gliner_fr":      cached(gliner_fr_anonymize),
+        "gliner2":        cached(gliner2_anonymize),
+        "presidio":       cached(presidio_anonymize),
+    }
+    ensemble_members = {n: members[n] for n in args.ensemble_members.split(",")}
+
     providers = [
-        ("Privacy Filter", privacy_filter_local_anonymize),
-        ("OpenMed",        openmed_local_anonymize),
-        ("GLiNER",         gliner_local_anonymize),
-        ("GLiNER (fine-tuné FR)", gliner_fr_anonymize),
-        ("Presidio",       presidio_anonymize),
+        ("Privacy Filter", members["privacy_filter"]),
+        ("OpenMed",        members["openmed"]),
+        ("GLiNER",         members["gliner"]),
+        ("GLiNER (fine-tuné FR)", members["gliner_fr"]),
+        ("GLiNER2",        members["gliner2"]),
+        ("Presidio",       members["presidio"]),
+    ] + [
+        (f"Croisement {strategy}", lambda text, s=strategy: anonymize_with(text, ensemble_members, s))
+        for strategy in STRATEGIES
     ]
 
     print("=" * 65)
@@ -120,6 +154,8 @@ def main():
 
     print("=" * 65)
     print("  Recall : % PII masquées | Leakage : % PII ayant fui (0 = parfait)")
+    print(f"  Croisements sur : {', '.join(ensemble_members)} — latence affichée hors détecteurs")
+    print("  (sorties mises en cache) : la latence réelle ≈ somme des latences des détecteurs.")
 
     for name in all_label_data:
         print_per_label(name, all_label_data[name])

@@ -5,6 +5,7 @@ import tempfile
 import time
 from collections import Counter
 from pathlib import Path
+from types import SimpleNamespace
 
 # Empêche transformers de charger TensorFlow (cf. app.py — même contrainte
 # pour les providers PII texte locaux utilisés ici : GLiNER, Presidio...).
@@ -35,6 +36,7 @@ PROVIDERS = {
     "GLiNER2 (PII multilingue)": "providers.gliner2_provider",
     "OpenMed": "providers.openmed_local_provider",
     "Privacy Filter": "providers.privacy_filter_local_provider",
+    "Croisement (ensemble)": "providers.ensemble_provider",
 }
 
 with st.sidebar:
@@ -68,6 +70,20 @@ with st.sidebar:
             height=80,
             help="Vide = détecter toutes les entités.",
         )
+    elif selected_provider_name == "Croisement (ensemble)":
+        from providers.ensemble_provider import DEFAULT_MEMBERS, MEMBERS, STRATEGIES
+        ensemble_members = st.multiselect(
+            "Détecteurs combinés", options=list(MEMBERS), default=list(DEFAULT_MEMBERS),
+            help="Chaque détecteur tourne avec sa liste d'entités par défaut.",
+        )
+        ensemble_strategy = st.radio(
+            "Méthode de combinaison", options=list(STRATEGIES), index=1,
+            format_func={"union": "Union (recall max)", "vote": "Vote majoritaire",
+                         "pondere": "Vote pondéré (F1)"}.get,
+            help="Union : masqué si un détecteur le trouve. Vote : si au moins la moitié. "
+                 "Pondéré : vote pondéré par le F1 de chaque détecteur.",
+        )
+        custom_instruction = ""
     else:
         custom_instruction = ""
 
@@ -93,6 +109,8 @@ if uploaded:
 
     if st.button("Anonymiser l'audio", type="primary", use_container_width=True):
         provider = importlib.import_module(PROVIDERS[selected_provider_name])
+        if selected_provider_name == "Croisement (ensemble)":
+            provider = SimpleNamespace(anonymize=provider.make_anonymize(ensemble_members, ensemble_strategy))
         suffix = Path(uploaded.name).suffix or ".wav"
 
         with tempfile.TemporaryDirectory() as tmpdir:
